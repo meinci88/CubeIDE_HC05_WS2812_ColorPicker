@@ -61,7 +61,7 @@ static void MX_DMA_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART1_UART_Init(void);
 /* USER CODE BEGIN PFP */
-
+void WS2812_SetColor(uint8_t r, uint8_t g, uint8_t b);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -82,10 +82,10 @@ int datasentflag=0;
 uint16_t effStep = 1;
 uint8_t LED_Data[MAX_LED][8];
 uint8_t LED_Mod[MAX_LED][8];  // for brightness
+uint8_t ws2812_buffer[24];
 
 char value[] = {'0','0','0','0'};
 char color[3];
-
 
 uint16_t pwmData[(24*MAX_LED)+50];
 
@@ -94,27 +94,22 @@ uint16_t val = 0;
 int eff = 0;
 
 uint16_t RxBufint = 0;
-
 uint8_t Brightness;
 
 
-
-void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
-{
+void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim){
 	HAL_TIM_PWM_Stop_DMA(&htim3, TIM_CHANNEL_1);
 	datasentflag=1;
 }
 
-void Set_LED (int LEDnum, int Red, int Green, int Blue)
-{
+void Set_LED (int LEDnum, int Red, int Green, int Blue){
 	LED_Data[LEDnum][0] = LEDnum;
 	LED_Data[LEDnum][1] = Green;
 	LED_Data[LEDnum][2] = Red;
 	LED_Data[LEDnum][3] = Blue;
 }
 
-static void Set_Brightness (int brightness)  // 0-45
-{
+static void Set_Brightness (int brightness){
 #if USE_BRIGHTNESS
 	if (brightness > 45) brightness = 45;
 	for (int i=0; i<MAX_LED; i++)
@@ -132,126 +127,118 @@ static void Set_Brightness (int brightness)  // 0-45
 }
 
 
-
-static void WS2812_Send (void)
+static void WS2812_Send (void){
+	uint32_t indx=0;
+	uint32_t color;
+	for (int i= 0; i<MAX_LED; i++)
 	{
-		uint32_t indx=0;
-		uint32_t color;
-		for (int i= 0; i<MAX_LED; i++)
-		{
-	#if USE_BRIGHTNESS
-			color = ((LED_Mod[i][1]<<16) | (LED_Mod[i][2]<<8) | (LED_Mod[i][3]));
-	#else
-			color = ((LED_Data[i][1]<<16) | (LED_Data[i][2]<<8) | (LED_Data[i][3]));
-	#endif
+#if USE_BRIGHTNESS
+		color = ((LED_Mod[i][1]<<16) | (LED_Mod[i][2]<<8) | (LED_Mod[i][3]));
+#else
+		color = ((LED_Data[i][1]<<16) | (LED_Data[i][2]<<8) | (LED_Data[i][3]));
+#endif
 
-			for (int i=23; i>=0; i--)
-			{
-				if (color&(1<<i))
-				{
-					pwmData[indx] = 60;  // 2/3 of 90
-				}
-				else pwmData[indx] = 30;  // 1/3 of 90
-				indx++;
-			}
-		}
-		for (int i=0; i<50; i++)
+		for (int i=23; i>=0; i--)
 		{
-			pwmData[indx] = 0;
+			if (color&(1<<i))
+			{
+				pwmData[indx] = 60;  // 2/3 of 90
+			}
+			else pwmData[indx] = 30;  // 1/3 of 90
 			indx++;
 		}
-
-		HAL_TIM_PWM_Start_DMA(&htim3, TIM_CHANNEL_1, (uint32_t *)pwmData, indx);
-		while (!datasentflag){};
-		datasentflag = 0;
 	}
+	for (int i=0; i<50; i++)
+	{
+		pwmData[indx] = 0;
+		indx++;
+	}
+
+	HAL_TIM_PWM_Start_DMA(&htim3, TIM_CHANNEL_1, (uint32_t *)pwmData, indx);
+	while (!datasentflag){};
+	datasentflag = 0;
+}
 
 void Reset_LED (void)
+{
+	for (int i=0; i<MAX_LED; i++)
 	{
-		for (int i=0; i<MAX_LED; i++)
-		{
-			LED_Data[i][0] = i;
-			LED_Data[i][1] = 0;
-			LED_Data[i][2] = 0;
-			LED_Data[i][3] = 0;
-		}
+		LED_Data[i][0] = i;
+		LED_Data[i][1] = 0;
+		LED_Data[i][2] = 0;
+		LED_Data[i][3] = 0;
 	}
+}
 
 static uint8_t rainbow_effect_left() {
 
-	  float factor1, factor2;
-	  uint16_t ind;
-	  for(uint16_t j=0;j<24;j++) {
-	    ind = effStep + j * 1.625;
-	    switch((int)((ind % 13) / 4.333333333333333)) {
-	      case 0: factor1 = 1.0 - ((float)(ind % 13 - 0 * 4.333333333333333) / 4.333333333333333);
-	              factor2 = (float)((int)(ind - 0) % 13) / 4.333333333333333;
-	              /************ chnaged here *********/
-	              Set_LED(j, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2);
-	              WS2812_Send();
-	              break;
-	      case 1: factor1 = 1.0 - ((float)(ind % 13 - 1 * 4.333333333333333) / 4.333333333333333);
-	              factor2 = (float)((int)(ind - 4.333333333333333) % 13) / 4.333333333333333;
-	              Set_LED(j, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2);
-	              WS2812_Send();
-	              break;
-	      case 2: factor1 = 1.0 - ((float)(ind % 13 - 2 * 4.333333333333333) / 4.333333333333333);
-	              factor2 = (float)((int)(ind - 8.666666666666666) % 13) / 4.333333333333333;
-	              Set_LED(j, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2);
-	              WS2812_Send();
-	              break;
-	    }
-	  }
-	  if(effStep >= 13) {effStep=0; return 0x03; }
-	  else effStep++;
-	  return 0x01;
-	}
-
-static uint8_t rainbow_effect_right() {
-	    // Strip ID: 0 - Effect: Rainbow - LEDS: 8
-	    // Steps: 14 - Delay: 30
-	    // Colors: 3 (255.0.0, 0.255.0, 0.0.255)
-	    // Options: rainbowlen=8, toLeft=false,
-	//  if(millis() - strip_0.effStart < 30 * (strip_0.effStep)) return 0x00;
-	  float factor1, factor2;
-	  uint16_t ind;
-	  for(uint16_t j=0;j<24;j++) {
-	    ind = 14 - (int16_t)(effStep - j * 1.75) % 14;
-	    switch((int)((ind % 14) / 4.666666666666667)) {
-	      case 0: factor1 = 1.0 - ((float)(ind % 14 - 0 * 4.666666666666667) / 4.666666666666667);
-	              factor2 = (float)((int)(ind - 0) % 14) / 4.666666666666667;
-	              Set_LED(j, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2);
-	              WS2812_Send();
-	              break;
-	    	  factor1 = 1.0 - ((float)(ind % 14 - 2 * 4.666666666666667) / 4.666666666666667);
-	    	  	              factor2 = (float)((int)(ind - 9.333333333333334) % 14) / 4.666666666666667;
-	    	  	              Set_LED(j, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2);
-	    	  	              WS2812_Send();
-	    	  	              break;
-
-	      case 1: factor1 = 1.0 - ((float)(ind % 14 - 1 * 4.666666666666667) / 4.666666666666667);
-	              factor2 = (float)((int)(ind - 4.666666666666667) % 14) / 4.666666666666667;
-	              Set_LED(j, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2);
-	              WS2812_Send();
-	              break;
-	      case 2: factor1 = 1.0 - ((float)(ind % 14 - 2 * 4.666666666666667) / 4.666666666666667);
-	              factor2 = (float)((int)(ind - 9.333333333333334) % 14) / 4.666666666666667;
-	              Set_LED(j, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2);
-	              WS2812_Send();
-	              break;
-	    }
-	  }
-	  if(effStep >= 14) {effStep = 0; return 0x03; }
-	  else effStep++;
-	  return 0x01;
-	}
-
-static void white_effect (void){
-		for(uint8_t j=0;j<24;j++) {
-		  Set_LED(j, 255, 255, 255);
-		  WS2812_Send();
+	float factor1, factor2;
+	uint16_t ind;
+	for(uint16_t j=0;j<24;j++) {
+		ind = effStep + j * 1.625;
+		switch((int)((ind % 13) / 4.333333333333333)) {
+		case 0: factor1 = 1.0 - ((float)(ind % 13 - 0 * 4.333333333333333) / 4.333333333333333);
+		factor2 = (float)((int)(ind - 0) % 13) / 4.333333333333333;
+		/************ chnaged here *********/
+		Set_LED(j, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2);
+		WS2812_Send();
+		break;
+		case 1: factor1 = 1.0 - ((float)(ind % 13 - 1 * 4.333333333333333) / 4.333333333333333);
+		factor2 = (float)((int)(ind - 4.333333333333333) % 13) / 4.333333333333333;
+		Set_LED(j, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2);
+		WS2812_Send();
+		break;
+		case 2: factor1 = 1.0 - ((float)(ind % 13 - 2 * 4.333333333333333) / 4.333333333333333);
+		factor2 = (float)((int)(ind - 8.666666666666666) % 13) / 4.333333333333333;
+		Set_LED(j, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2);
+		WS2812_Send();
+		break;
 		}
 	}
+	if(effStep >=15) {effStep=0; return 0x03; }
+	else effStep++;
+	return 0x01;
+}
+
+static uint8_t rainbow_effect_right() {
+	// Strip ID: 0 - Effect: Rainbow - LEDS: 8
+	// Steps: 14 - Delay: 30
+	// Colors: 3 (255.0.0, 0.255.0, 0.0.255)
+	// Options: rainbowlen=8, toLeft=false,
+	//  if(millis() - strip_0.effStart < 30 * (strip_0.effStep)) return 0x00;
+	float factor1, factor2;
+	uint16_t ind;
+	for(uint16_t j=0;j<24;j++) {
+		ind = 14 - (int16_t)(effStep - j * 1.75) % 14;
+		switch((int)((ind % 14) / 4.666666666666667)) {
+		case 0: factor1 = 1.0 - ((float)(ind % 14 - 0 * 4.666666666666667) / 4.666666666666667);
+		factor2 = (float)((int)(ind - 0) % 14) / 4.666666666666667;
+		Set_LED(j, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2);
+		WS2812_Send();
+		break;
+		factor1 = 1.0 - ((float)(ind % 14 - 2 * 4.666666666666667) / 4.666666666666667);
+		factor2 = (float)((int)(ind - 9.333333333333334) % 14) / 4.666666666666667;
+		Set_LED(j, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2);
+		WS2812_Send();
+		break;
+
+		case 1: factor1 = 1.0 - ((float)(ind % 14 - 1 * 4.666666666666667) / 4.666666666666667);
+		factor2 = (float)((int)(ind - 4.666666666666667) % 14) / 4.666666666666667;
+		Set_LED(j, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2, 0 * factor1 + 255 * factor2);
+		WS2812_Send();
+		break;
+		case 2: factor1 = 1.0 - ((float)(ind % 14 - 2 * 4.666666666666667) / 4.666666666666667);
+		factor2 = (float)((int)(ind - 9.333333333333334) % 14) / 4.666666666666667;
+		Set_LED(j, 0 * factor1 + 255 * factor2, 0 * factor1 + 0 * factor2, 255 * factor1 + 0 * factor2);
+		WS2812_Send();
+		break;
+		}
+	}
+	if(effStep >= 14) {effStep = 0; return 0x03; }
+	else effStep++;
+	return 0x01;
+}
+
 static void color_effect(uint8_t *RxBuf){
 
 	color[0] = RxBuf[2];
@@ -259,11 +246,48 @@ static void color_effect(uint8_t *RxBuf){
 	color[2] = RxBuf[4];
 
 	for(uint8_t j=0;j<24;j++) {
-			  Set_LED(j, color[0], color[1], color[2]);
-			  WS2812_Send();
-			}
+		Set_LED(j, color[0], color[1], color[2]);
+		WS2812_Send();
+	}
 }
 
+static void scroll_effect(uint8_t *RxBuf){
+		color[0] = RxBuf[2];
+		color[1] = RxBuf[3];
+		color[2] = RxBuf[4];
+	for(uint8_t j=0;j<23;j++) {
+		if(*MainBuf== 'E'){
+			Set_LED(j, color[0], color[1], color[2]);
+			Set_LED(j-1, 0, 0, 0);
+			if(j>=22){
+				Set_LED(j+1, 0, 0, 0);
+			}
+			WS2812_Send();
+			Brightness = RxBuf[1];
+			Set_Brightness(Brightness);
+			HAL_Delay(50);
+		}
+		else{
+			break;
+		}
+	}
+	for(uint8_t j=23;j>0;j--) {
+		if(*MainBuf== 'E'){
+			Set_LED(j, color[0], color[1], color[2]);
+			Set_LED(j-1, 0, 0, 0);
+			if(j==0){
+				Set_LED(j+1, 0, 0, 0);
+			}
+			WS2812_Send();
+			Brightness = RxBuf[1];
+			Set_Brightness(Brightness);
+			HAL_Delay(50);
+		}else{
+			break;
+		}
+
+	}
+}
 
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
@@ -333,7 +357,6 @@ int main(void)
 
     	 /* USER CODE BEGIN 3 */
 
-
     	 switch(*MainBuf){
     	 case 'A':
     		 rainbow_effect_left();
@@ -348,10 +371,16 @@ int main(void)
     		 break;
 
     	 case 'D':
-    	     color_effect(RxBuf);
-    	     Brightness = RxBuf[1];
-    	     Set_Brightness(Brightness);
-    	     break;
+    		 color_effect(RxBuf);
+    		 Brightness = RxBuf[1];
+    		 Set_Brightness(Brightness);
+    		 break;
+
+    	 case 'E':
+    		 scroll_effect(RxBuf);
+    		 //Brightness = RxBuf[1];
+    		 //Set_Brightness(Brightness);
+    		 break;
     	 }
      }
   /* USER CODE END 3 */
