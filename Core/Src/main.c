@@ -69,16 +69,21 @@ void WS2812_SetColor(uint8_t r, uint8_t g, uint8_t b);
 #define RxBuf_SIZE   5
 #define MainBuf_SIZE 5
 
+#define LED_COUNT  24  // Anzahl der LEDs in deinem Streifen
+
 uint8_t RxBuf[RxBuf_SIZE];
 uint8_t MainBuf[MainBuf_SIZE];
 
 uint16_t oldPos = 0;
 uint16_t newPos = 0;
 
+uint8_t i = 0;
+
 #define MAX_LED 24
 #define USE_BRIGHTNESS 1
 #define PI 3.14159265
 int datasentflag=0;
+
 uint16_t effStep = 1;
 uint8_t LED_Data[MAX_LED][8];
 uint8_t LED_Mod[MAX_LED][8];  // for brightness
@@ -250,45 +255,43 @@ static void color_effect(uint8_t *RxBuf){
 		WS2812_Send();
 	}
 }
-
-static void scroll_effect(uint8_t *RxBuf){
-		color[0] = RxBuf[2];
-		color[1] = RxBuf[3];
-		color[2] = RxBuf[4];
-	for(uint8_t j=0;j<23;j++) {
-		if(*MainBuf== 'E'){
-			Set_LED(j, color[0], color[1], color[2]);
-			Set_LED(j-1, 0, 0, 0);
-			if(j>=22){
-				Set_LED(j+1, 0, 0, 0);
-			}
-			WS2812_Send();
-			Brightness = RxBuf[1];
-			Set_Brightness(Brightness);
-			HAL_Delay(50);
-		}
-		else{
-			break;
-		}
+static void voiceControl(uint8_t *RxBuf){
+	i = RxBuf[1];
+	int map(int x, int in_min, int in_max, int out_min, int out_max) {
+	    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 	}
-	for(uint8_t j=23;j>0;j--) {
-		if(*MainBuf== 'E'){
-			Set_LED(j, color[0], color[1], color[2]);
-			Set_LED(j-1, 0, 0, 0);
-			if(j==0){
-				Set_LED(j+1, 0, 0, 0);
-			}
-			WS2812_Send();
-			Brightness = RxBuf[1];
-			Set_Brightness(Brightness);
-			HAL_Delay(50);
-		}else{
-			break;
-		}
+	int pixelCount = map(i, 0, 1023, 0, 24);
 
-	}
+	Set_LED(pixelCount, 255, 0, 0);
+	WS2812_Send();
+	Set_Brightness(5);
+	HAL_Delay(30);
+	Set_LED(pixelCount, 0, 0, 0);
 }
 
+static void scroll_effect(uint8_t *RxBuf){
+	color[0] = RxBuf[2];
+	color[1] = RxBuf[3];
+	color[2] = RxBuf[4];
+	Brightness = RxBuf[1];
+	if(*MainBuf == 'E'){
+		// Lauflichteffekt von links nach rechts
+		for (int i = 0; i < LED_COUNT; i++) {
+			Set_LED(i, 255, 0, 0);
+			WS2812_Send();
+			Set_Brightness(40);
+			HAL_Delay(30);
+			Set_LED(i, 0, 0, 0);
+		}
+		for (int i = LED_COUNT - 1; i >= 0; i--) {
+			Set_LED(i, 0, 0, 255);
+			WS2812_Send();
+			Set_Brightness(40);
+			HAL_Delay(30);
+			Set_LED(i, 0, 0, 0);
+		}
+	}
+}
 
 void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
@@ -356,7 +359,7 @@ int main(void)
     	 /* USER CODE END WHILE */
 
     	 /* USER CODE BEGIN 3 */
-
+    	 //scroll_effect(RxBuf);
     	 switch(*MainBuf){
     	 case 'A':
     		 rainbow_effect_left();
@@ -381,6 +384,11 @@ int main(void)
     		 //Brightness = RxBuf[1];
     		 //Set_Brightness(Brightness);
     		 break;
+    	 /*case 'E':
+    	    voiceControl(RxBuf);
+    	    //Brightness = RxBuf[1];
+    	    //Set_Brightness(Brightness);
+    	    break;*/
     	 }
      }
   /* USER CODE END 3 */
